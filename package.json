@@ -1,0 +1,32 @@
+{
+  "name": "realtime-notes-backend",
+  "version": "0.1.0",
+  "private": true,
+  "scripts": {
+    "dev": "ts-node-dev --respawn --transpile-only src/index.ts",
+    "build": "tsc",
+    "start": "node dist/index.js",
+    "prisma:migrate": "prisma migrate dev --name init",
+    "prisma:generate": "prisma generate"
+  },
+  "dependencies": {
+    "@prisma/client": "*",
+    "bcrypt": "*",
+    "cors": "*",
+    "dotenv": "*",
+    "express": "*",
+    "helmet": "*",
+    "jsonwebtoken": "*",
+    "ws": "*"
+  },
+  "devDependencies": {
+    "prisma": "*",
+    "ts-node-dev": "*",
+    "typescript": "*",
+    "@types/express": "*",
+    "@types/node": "*",
+    "@types/ws": "*",
+    "@types/bcrypt": "*",
+    "@types/jsonwebtoken": "*"
+  }
+}
