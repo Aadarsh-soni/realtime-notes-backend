@@ -1,4 +1,4 @@
-import express from "express";
+[import express from "express";
 import http from "http";
 import cors from "cors";
 import helmet from "helmet";
@@ -25,12 +25,19 @@ app.get("/health", (req, res) => {
   res.json({ status: "ok", time: new Date().toISOString() });
 });
 
-// Create HTTP server and attach WebSocket
+// Create HTTP server and attach WebSocket (only in non-serverless environments)
 const server = http.createServer(app);
-initCollabWebsocket(server);
+
+// WebSocket only works in non-serverless environments
+if (process.env.NODE_ENV !== 'production' || process.env.VERCEL !== '1') {
+  initCollabWebsocket(server);
+}
 
 // Export app for testing
 export { app };
+
+// Default export for Vercel
+export default app;
 
 // Start server only when this file is run directly
 if (require.main === module) {

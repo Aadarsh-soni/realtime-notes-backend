@@ -27,9 +27,14 @@ app_1.default.use("/folders", folder_1.default); // Folder CRUD
 app_1.default.get("/health", (req, res) => {
     res.json({ status: "ok", time: new Date().toISOString() });
 });
-// Create HTTP server and attach WebSocket
+// Create HTTP server and attach WebSocket (only in non-serverless environments)
 const server = http_1.default.createServer(app_1.default);
-(0, collab_1.initCollabWebsocket)(server);
+// WebSocket only works in non-serverless environments
+if (process.env.NODE_ENV !== 'production' || process.env.VERCEL !== '1') {
+    (0, collab_1.initCollabWebsocket)(server);
+}
+// Default export for Vercel
+exports.default = app_1.default;
 // Start server only when this file is run directly
 if (require.main === module) {
     server.listen(config_1.PORT, () => {
