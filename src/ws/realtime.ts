@@ -8,21 +8,31 @@ export interface OperationMessage {
   position: number;
   deleteLen: number;
   insert: string;
-  userId: number;
+  userId: number | string; // Can be number for authenticated users or string for anonymous
+  isAnonymous: boolean;
+  sessionId?: string; // For anonymous users
   timestamp: number;
 }
 
 export interface UserPresenceMessage {
   type: "user_join" | "user_leave";
   noteId: number;
-  userId: number;
+  userId: number | string; // Can be number for authenticated users or string for anonymous
   userName: string;
+  isAnonymous: boolean;
+  sessionId?: string; // For anonymous users
   timestamp: number;
 }
 
 export interface CollaborationState {
   noteId: number;
-  activeUsers: Map<number, { id: number; name: string; lastSeen: number }>;
+  activeUsers: Map<number | string, { 
+    id: number | string; 
+    name: string; 
+    lastSeen: number; 
+    isAnonymous: boolean;
+    sessionId?: string;
+  }>;
   operations: OperationMessage[];
 }
 
@@ -43,12 +53,14 @@ export class RealtimeService {
   }
 
   // Add user to note collaboration
-  static addUser(noteId: number, userId: number, userName: string): UserPresenceMessage {
+  static addUser(noteId: number, userId: number | string, userName: string, isAnonymous: boolean = false, sessionId?: string): UserPresenceMessage {
     const state = this.getCollaborationState(noteId);
     state.activeUsers.set(userId, {
       id: userId,
       name: userName,
-      lastSeen: Date.now()
+      lastSeen: Date.now(),
+      isAnonymous,
+      sessionId
     });
 
     return {
@@ -56,12 +68,14 @@ export class RealtimeService {
       noteId,
       userId,
       userName,
+      isAnonymous,
+      sessionId,
       timestamp: Date.now()
     };
   }
 
   // Remove user from note collaboration
-  static removeUser(noteId: number, userId: number, userName: string): UserPresenceMessage {
+  static removeUser(noteId: number, userId: number | string, userName: string, isAnonymous: boolean = false, sessionId?: string): UserPresenceMessage {
     const state = this.getCollaborationState(noteId);
     state.activeUsers.delete(userId);
 
@@ -70,6 +84,8 @@ export class RealtimeService {
       noteId,
       userId,
       userName,
+      isAnonymous,
+      sessionId,
       timestamp: Date.now()
     };
   }
@@ -77,11 +93,13 @@ export class RealtimeService {
   // Add operation to note
   static addOperation(
     noteId: number,
-    userId: number,
+    userId: number | string,
     baseVersion: number,
     position: number,
     deleteLen: number,
-    insert: string
+    insert: string,
+    isAnonymous: boolean = false,
+    sessionId?: string
   ): OperationMessage {
     const state = this.getCollaborationState(noteId);
     
@@ -93,6 +111,8 @@ export class RealtimeService {
       deleteLen,
       insert,
       userId,
+      isAnonymous,
+      sessionId,
       timestamp: Date.now()
     };
 
@@ -107,7 +127,13 @@ export class RealtimeService {
   }
 
   // Get active users for a note
-  static getActiveUsers(noteId: number): Array<{ id: number; name: string; lastSeen: number }> {
+  static getActiveUsers(noteId: number): Array<{ 
+    id: number | string; 
+    name: string; 
+    lastSeen: number; 
+    isAnonymous: boolean;
+    sessionId?: string;
+  }> {
     const state = this.getCollaborationState(noteId);
     return Array.from(state.activeUsers.values());
   }
