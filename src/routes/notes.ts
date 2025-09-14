@@ -22,6 +22,24 @@ router.post("/", async (req: AuthRequest, res) => {
   res.status(201).json(note);
 });
 
+// Search endpoint - MUST come before /:id route
+router.get("/search", async (req: AuthRequest, res) => {
+  const q = String(req.query.q || "").trim();
+  if (!q) return res.json([]);
+  const results = await prisma.note.findMany({
+    where: {
+      ownerId: req.userId!,
+      isDeleted: false,
+      OR: [
+        { title: { contains: q } },
+        { content: { contains: q } },
+      ],
+    },
+    orderBy: { updatedAt: "desc" },
+  });
+  res.json(results);
+});
+
 router.get("/:id", async (req: AuthRequest, res) => {
   const id = Number(req.params.id);
   const note = await prisma.note.findUnique({
@@ -51,23 +69,6 @@ router.delete("/:id", async (req: AuthRequest, res) => {
     return res.status(404).json({ error: "not found or unauthorized" });
   await prisma.note.update({ where: { id }, data: { isDeleted: true } });
   res.status(204).send();
-});
-
-router.get("/search", async (req: AuthRequest, res) => {
-  const q = String(req.query.q || "").trim();
-  if (!q) return res.json([]);
-  const results = await prisma.note.findMany({
-    where: {
-      ownerId: req.userId!,
-      isDeleted: false,
-      OR: [
-        { title: { contains: q } },
-        { content: { contains: q } },
-      ],
-    },
-    orderBy: { updatedAt: "desc" },
-  });
-  res.json(results);
 });
 
 //Version History API
