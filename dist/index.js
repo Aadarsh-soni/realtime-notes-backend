@@ -11,6 +11,7 @@ const helmet_1 = __importDefault(require("helmet"));
 const auth_1 = __importDefault(require("./routes/auth"));
 const notes_1 = __importDefault(require("./routes/notes"));
 const folder_1 = __importDefault(require("./routes/folder"));
+const realtime_1 = __importDefault(require("./routes/realtime"));
 const collab_1 = require("./ws/collab");
 const config_1 = require("./config");
 const app_1 = __importDefault(require("./app"));
@@ -23,6 +24,7 @@ app_1.default.use(express_1.default.json());
 app_1.default.use("/auth", auth_1.default); // Register / Login
 app_1.default.use("/notes", notes_1.default); // Notes CRUD + search
 app_1.default.use("/folders", folder_1.default); // Folder CRUD
+app_1.default.use("/realtime", realtime_1.default); // Real-time collaboration
 // Health check endpoint (optional, for deployment)
 app_1.default.get("/health", (req, res) => {
     res.json({ status: "ok", time: new Date().toISOString() });
