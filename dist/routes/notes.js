@@ -54,11 +54,11 @@ router.get("/:id", async (req, res) => {
 router.put("/:id", async (req, res) => {
     const id = Number(req.params.id);
     const { title, content, folderId } = req.body;
-    const note = await prisma_1.prisma.note.findUnique({ where: { id } });
-    if (!note || note.ownerId !== req.userId)
+    const note = await prisma_1.prisma.note.findUnique({ where: { id }, include: { collaborations: true } });
+    if (!note || (note.ownerId !== req.userId && !note.collaborations.some((c) => c.userId === req.userId)))
         return res.status(404).json({ error: "not found or unauthorized" });
     const updated = await prisma_1.prisma.note.update({ where: { id }, data: { title, content, folderId } });
-    await prisma_1.prisma.noteVersion.create({ data: { noteId: id, content, authorId: req.userId } });
+    await prisma_1.prisma.noteVersion.create({ data: { noteId: id, content: content ?? note.content, authorId: req.userId } });
     res.json(updated);
 });
 router.delete("/:id", async (req, res) => {
