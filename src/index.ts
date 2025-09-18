@@ -6,7 +6,10 @@ import helmet from "helmet";
 import authRoutes from "./routes/auth";
 import notesRoutes from "./routes/notes";
 import foldersRoutes from "./routes/folder";
-import realtimeRoutes from "./routes/realtime";
+// Removed legacy realtime routes in favor of invite-based WS + /collab REST
+// Use require to avoid TS module resolution hiccups
+// eslint-disable-next-line @typescript-eslint/no-var-requires
+const collabRoutes = require("./routes/collab").default as import("express").Router;
 import { initCollabWebsocket } from "./ws/collab";
 import { PORT } from "./config";
 import app from "./app";
@@ -20,7 +23,7 @@ app.use(express.json());
 app.use("/auth", authRoutes);      // Register / Login
 app.use("/notes", notesRoutes);    // Notes CRUD + search
 app.use("/folders", foldersRoutes); // Folder CRUD
-app.use("/realtime", realtimeRoutes); // Real-time collaboration
+app.use("/collab", collabRoutes); // Collaboration REST (online users, share)
 
 // Health check endpoint (optional, for deployment)
 app.get("/health", (req, res) => {
