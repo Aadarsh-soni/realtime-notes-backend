@@ -6,16 +6,18 @@ Object.defineProperty(exports, "__esModule", { value: true });
 const express_1 = __importDefault(require("express"));
 const auth_1 = require("../middleware/auth");
 const prisma_1 = require("../prisma");
+const collab_1 = require("../ws/collab");
 const router = express_1.default.Router();
 router.use(auth_1.authMiddleware);
-// List currently online users (connected via WS)
-// This relies on WS presence endpoint over WebSocket: client should call presence.list.
-// For convenience, provide HTTP endpoint that returns all registered users except self.
+// List currently online users (connected via WS), excluding the requester
 router.get("/users/online", async (req, res) => {
     try {
         const me = req.userId;
+        const onlineIds = (0, collab_1.getOnlineUserIds)().filter(id => id !== me);
+        if (onlineIds.length === 0)
+            return res.json({ users: [] });
         const users = await prisma_1.prisma.user.findMany({
-            where: { id: { not: me } },
+            where: { id: { in: onlineIds } },
             select: { id: true, email: true, name: true }
         });
         res.json({ users });

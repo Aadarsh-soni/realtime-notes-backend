@@ -16,10 +16,15 @@ type RoomJoinMessage = { type: "room.join"; noteId: number };
 type OperationMessage = { type: "op.apply"; noteId: number; position: number; deleteLen: number; insert: string };
 type PresenceListRequest = { type: "presence.list" };
 
+// Presence registry (module-level) so REST can read online users
+const userIdToClients = new Map<number, Set<WebSocket>>();
+export function getOnlineUserIds(): number[] {
+  return Array.from(userIdToClients.keys());
+}
+
 export function initCollabWebsocket(server: http.Server) {
   const wss = new WSServer({ server, path: "/ws" });
 
-  const userIdToClients = new Map<number, Set<WebSocket>>();
   const noteIdToRoom = new Map<number, Set<WebSocket>>();
 
   function broadcastToRoom(noteId: number, payload: unknown, except?: WebSocket) {

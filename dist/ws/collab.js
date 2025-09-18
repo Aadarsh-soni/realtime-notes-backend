@@ -36,15 +36,20 @@ var __importDefault = (this && this.__importDefault) || function (mod) {
     return (mod && mod.__esModule) ? mod : { "default": mod };
 };
 Object.defineProperty(exports, "__esModule", { value: true });
+exports.getOnlineUserIds = getOnlineUserIds;
 exports.initCollabWebsocket = initCollabWebsocket;
 const ws_1 = __importStar(require("ws"));
 const url_1 = __importDefault(require("url"));
 const jsonwebtoken_1 = __importDefault(require("jsonwebtoken"));
 const config_1 = require("../config");
 const prisma_1 = require("../prisma");
+// Presence registry (module-level) so REST can read online users
+const userIdToClients = new Map();
+function getOnlineUserIds() {
+    return Array.from(userIdToClients.keys());
+}
 function initCollabWebsocket(server) {
     const wss = new ws_1.Server({ server, path: "/ws" });
-    const userIdToClients = new Map();
     const noteIdToRoom = new Map();
     function broadcastToRoom(noteId, payload, except) {
         const clients = noteIdToRoom.get(noteId);
