@@ -18,23 +18,27 @@ class RealtimeService {
         return collaborationStates.get(noteId);
     }
     // Add user to note collaboration
-    static addUser(noteId, userId, userName) {
+    static addUser(noteId, userId, userName, isAnonymous = false, sessionId) {
         const state = this.getCollaborationState(noteId);
         state.activeUsers.set(userId, {
             id: userId,
             name: userName,
-            lastSeen: Date.now()
+            lastSeen: Date.now(),
+            isAnonymous,
+            sessionId
         });
         return {
             type: "user_join",
             noteId,
             userId,
             userName,
+            isAnonymous,
+            sessionId,
             timestamp: Date.now()
         };
     }
     // Remove user from note collaboration
-    static removeUser(noteId, userId, userName) {
+    static removeUser(noteId, userId, userName, isAnonymous = false, sessionId) {
         const state = this.getCollaborationState(noteId);
         state.activeUsers.delete(userId);
         return {
@@ -42,11 +46,13 @@ class RealtimeService {
             noteId,
             userId,
             userName,
+            isAnonymous,
+            sessionId,
             timestamp: Date.now()
         };
     }
     // Add operation to note
-    static addOperation(noteId, userId, baseVersion, position, deleteLen, insert) {
+    static addOperation(noteId, userId, baseVersion, position, deleteLen, insert, isAnonymous = false, sessionId) {
         const state = this.getCollaborationState(noteId);
         const operation = {
             type: "operation",
@@ -56,6 +62,8 @@ class RealtimeService {
             deleteLen,
             insert,
             userId,
+            isAnonymous,
+            sessionId,
             timestamp: Date.now()
         };
         state.operations.push(operation);

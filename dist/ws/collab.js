@@ -44,8 +44,24 @@ const config_1 = require("../config");
 const prisma_1 = require("../prisma");
 function initCollabWebsocket(server) {
     const wss = new ws_1.Server({ server, path: "/ws" });
-    const notesState = new Map();
-    const redoStacks = new Map();
+    const userIdToClients = new Map();
+    const noteIdToRoom = new Map();
+    function broadcastToRoom(noteId, payload, except) {
+        const clients = noteIdToRoom.get(noteId);
+        if (!clients)
+            return;
+        for (const c of clients)
+            if (c.readyState === ws_1.default.OPEN && c !== except)
+                c.send(JSON.stringify(payload));
+    }
+    function sendToUser(userId, payload) {
+        const set = userIdToClients.get(userId);
+        if (!set)
+            return;
+        for (const c of set)
+            if (c.readyState === ws_1.default.OPEN)
+                c.send(JSON.stringify(payload));
+    }
     wss.on("connection", async (ws, req) => {
         const parsed = url_1.default.parse(String(req.url), true);
         const token = parsed.query.token || (req.headers["authorization"] ? String(req.headers["authorization"]).replace(/^Bearer /, "") : undefined);
@@ -59,94 +75,78 @@ function initCollabWebsocket(server) {
             return ws.close(4002, "Invalid token");
         }
         const userId = payload.userId;
-        let joinedNoteId = null;
+        if (!userIdToClients.has(userId))
+            userIdToClients.set(userId, new Set());
+        userIdToClients.get(userId).add(ws);
         ws.on("message", async (raw) => {
+            let data;
             try {
-                const data = JSON.parse(String(raw));
-                if (data.type === "join") {
-                    const { noteId } = data;
-                    joinedNoteId = noteId;
-                    const note = await prisma_1.prisma.note.findUnique({ where: { id: noteId }, include: { collaborations: true } });
-                    if (!note || (note.ownerId !== userId && !note.collaborations.some((c) => c.userId === userId))) {
-                        ws.send(JSON.stringify({ type: "error", message: "not authorized" }));
-                        return ws.close(4003, "not authorized");
-                    }
-                    if (!notesState.has(noteId))
-                        notesState.set(noteId, { content: note.content, version: 0, history: [], clients: new Set() });
-                    const state = notesState.get(noteId);
-                    state.clients.add(ws);
-                    ws.send(JSON.stringify({ type: "snapshot", content: state.content, version: state.version }));
-                    const user = await prisma_1.prisma.user.findUnique({ where: { id: userId } });
-                    for (const c of state.clients)
-                        if (c !== ws && c.readyState === ws_1.default.OPEN)
-                            c.send(JSON.stringify({ type: "presence", user: { id: user?.id, name: user?.name, email: user?.email }, status: "joined" }));
-                }
-                if (data.type === "op") {
-                    const op = data;
-                    const state = notesState.get(op.noteId);
-                    if (!state)
-                        return ws.send(JSON.stringify({ type: "error", message: "no state" }));
-                    let transformedPos = op.position;
-                    for (let i = op.baseVersion; i < state.version; i++) {
-                        const other = state.history[i];
-                        if (other && other.position <= transformedPos)
-                            transformedPos += other.insert.length - other.deleteLen;
-                    }
-                    const before = state.content.slice(0, transformedPos);
-                    const after = state.content.slice(transformedPos + op.deleteLen);
-                    state.content = before + op.insert + after;
-                    state.history.push(op);
-                    state.version += 1;
-                    prisma_1.prisma.note.update({ where: { id: op.noteId }, data: { content: state.content } }).catch(console.error);
-                    for (const client of state.clients)
-                        if (client.readyState === ws_1.default.OPEN && client !== ws)
-                            client.send(JSON.stringify({ type: "op", position: transformedPos, deleteLen: op.deleteLen, insert: op.insert, version: state.version }));
-                    ws.send(JSON.stringify({ type: "ack", version: state.version }));
-                    redoStacks.set(op.noteId, []); // clear redo stack on new op
-                }
-                if (data.type === "undo" && joinedNoteId) {
-                    const state = notesState.get(joinedNoteId);
-                    if (!state || state.history.length === 0)
-                        return;
-                    const lastOp = state.history.pop();
-                    const before = state.content.slice(0, lastOp.position);
-                    const after = state.content.slice(lastOp.position + lastOp.insert.length);
-                    state.content = before + after;
-                    state.version -= 1;
-                    redoStacks.get(joinedNoteId)?.push(lastOp);
-                    for (const c of state.clients)
-                        if (c.readyState === ws_1.default.OPEN)
-                            c.send(JSON.stringify({ type: "undo", version: state.version }));
-                }
-                if (data.type === "redo" && joinedNoteId) {
-                    const redoStack = redoStacks.get(joinedNoteId) || [];
-                    if (redoStack.length === 0)
-                        return;
-                    const redoOp = redoStack.pop();
-                    const state = notesState.get(joinedNoteId);
-                    const before = state.content.slice(0, redoOp.position);
-                    const after = state.content.slice(redoOp.position + redoOp.deleteLen);
-                    state.content = before + redoOp.insert + after;
-                    state.history.push(redoOp);
-                    state.version += 1;
-                    for (const c of state.clients)
-                        if (c.readyState === ws_1.default.OPEN)
-                            c.send(JSON.stringify({ type: "redo", version: state.version }));
-                }
+                data = JSON.parse(String(raw));
             }
-            catch (err) {
-                ws.send(JSON.stringify({ type: "error", message: "invalid message" }));
+            catch {
+                return ws.send(JSON.stringify({ type: "error", message: "invalid json" }));
             }
+            // List online users (by currently connected)
+            if (data.type === "presence.list") {
+                const users = Array.from(userIdToClients.keys());
+                return ws.send(JSON.stringify({ type: "presence.users", users }));
+            }
+            // Invite: persist collaboration and notify recipient if online
+            if (data.type === "invite.send") {
+                const { noteId, toUserId } = data;
+                const note = await prisma_1.prisma.note.findUnique({ where: { id: noteId } });
+                if (!note || note.ownerId !== userId)
+                    return ws.send(JSON.stringify({ type: "error", message: "not authorized" }));
+                const exists = await prisma_1.prisma.collaboration.findFirst({ where: { noteId, userId: toUserId } });
+                if (!exists) {
+                    await prisma_1.prisma.collaboration.create({ data: { noteId, userId: toUserId, role: "editor" } });
+                }
+                sendToUser(toUserId, { type: "invite.received", noteId, fromUserId: userId });
+                return ws.send(JSON.stringify({ type: "invite.sent", noteId, toUserId }));
+            }
+            // Accept invite: just acknowledge; authorization enforced on join
+            if (data.type === "invite.accept") {
+                const { noteId } = data;
+                return ws.send(JSON.stringify({ type: "invite.accepted", noteId }));
+            }
+            // Join a note room if owner or collaborator
+            if (data.type === "room.join") {
+                const { noteId } = data;
+                const note = await prisma_1.prisma.note.findUnique({ where: { id: noteId }, include: { collaborations: true } });
+                if (!note || (note.ownerId !== userId && !note.collaborations.some(c => c.userId === userId))) {
+                    return ws.send(JSON.stringify({ type: "error", message: "not authorized" }));
+                }
+                if (!noteIdToRoom.has(noteId))
+                    noteIdToRoom.set(noteId, new Set());
+                noteIdToRoom.get(noteId).add(ws);
+                ws.send(JSON.stringify({ type: "room.snapshot", noteId, content: note.content }));
+                broadcastToRoom(noteId, { type: "room.user_joined", noteId, userId }, ws);
+                return;
+            }
+            // Simple operation broadcast (no OT for now)
+            if (data.type === "op.apply") {
+                const { noteId, position, deleteLen, insert } = data;
+                const room = noteIdToRoom.get(noteId);
+                if (!room || !room.has(ws))
+                    return ws.send(JSON.stringify({ type: "error", message: "join room first" }));
+                const note = await prisma_1.prisma.note.findUnique({ where: { id: noteId }, include: { collaborations: true } });
+                if (!note || (note.ownerId !== userId && !note.collaborations.some(c => c.userId === userId))) {
+                    return ws.send(JSON.stringify({ type: "error", message: "not authorized" }));
+                }
+                const before = note.content.slice(0, position);
+                const after = note.content.slice(position + deleteLen);
+                const updated = before + insert + after;
+                await prisma_1.prisma.note.update({ where: { id: noteId }, data: { content: updated } });
+                broadcastToRoom(noteId, { type: "op.applied", noteId, position, deleteLen, insert, userId }, ws);
+                return ws.send(JSON.stringify({ type: "op.ack", noteId }));
+            }
+            return ws.send(JSON.stringify({ type: "error", message: "unknown type" }));
         });
-        ws.on("close", async () => {
-            if (joinedNoteId) {
-                const s = notesState.get(joinedNoteId);
-                if (s) {
-                    s.clients.delete(ws);
-                    for (const c of s.clients)
-                        if (c.readyState === ws_1.default.OPEN)
-                            c.send(JSON.stringify({ type: "presence", user: { id: userId }, status: "left" }));
-                }
+        ws.on("close", () => {
+            userIdToClients.get(userId)?.delete(ws);
+            for (const [noteId, set] of noteIdToRoom.entries()) {
+                if (set.delete(ws))
+                    broadcastToRoom(noteId, { type: "room.user_left", noteId, userId });
             }
         });
     });
